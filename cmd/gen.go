@@ -5,48 +5,181 @@ package cmd
 
 import (
 	"encoding/json"
+
 	"fmt"
-	"github.com/nanaki-93/randatagen/internal"
+	_ "github.com/lib/pq"
 	"github.com/nanaki-93/randatagen/internal/model"
+	"github.com/nanaki-93/randatagen/internal/service"
+	"github.com/nanaki-93/randatagen/internal/template"
 	"github.com/spf13/cobra"
+
+	"log"
 	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
 )
 
-// genCmd represents the gen command
-var genCmd = &cobra.Command{
-	Use:   "gen",
-	Short: "generate random database data",
-	Long:  `generate random database data`,
+var validDb = []string{"postgres", "oracle"}
+
+// generateCmd represents the gen command
+var generateCmd = &cobra.Command{
+	Use:   "generate",
+	Short: "generate insert for sql data",
+	Long:  `generate insert for sql data`,
 	Run:   execGenCmd,
+	Args:  validateArgs(),
+}
+
+func validateArgs() func(cmd *cobra.Command, args []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		isDir, err := cmd.Flags().GetBool("dir")
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+		if !isDir {
+			if len(args) != 2 {
+				return fmt.Errorf("you have to use exactly 2 args, input file and output file")
+			}
+		}
+		return nil
+	}
 }
 
 func execGenCmd(cmd *cobra.Command, args []string) {
-	data, err := os.ReadFile("test.json")
+
+	isDir, err := cmd.Flags().GetBool("dir")
 	if err != nil {
-		fmt.Errorf("error reading file: %v", err)
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	isToFile, err := cmd.Flags().GetBool("toFile")
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	ranDataService := service.NewRandataService(isToFile)
+
+	if !isDir {
+		fromSingleFile(args, ranDataService)
+		return
+	}
+	allRandataFromCurrentDir(ranDataService)
+}
+
+func allRandataFromCurrentDir(w service.RanDataService) {
+	inputFiles, err := filepath.Glob("randata*.json")
+	if err != nil {
+		fmt.Printf("[!] error reading files: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Input files: %v\n", inputFiles)
+	for _, inputFile := range inputFiles {
+		dataGen, err := getDataGen(inputFile)
+		if err != nil {
+			fmt.Printf("[!] %s\n", err)
+			os.Exit(1)
+		}
+
+		genInsertSqlFile(dataGen, w)
+	}
+}
+
+func fromSingleFile(args []string, w service.RanDataService) {
+	fmt.Printf("input file: %s, output file: %s\n", args[0], args[1])
+	inputFilePath, _, err := getFilePaths(args)
+	if err != nil {
+		fmt.Printf("[!] %s\n", err)
+		os.Exit(1)
+	}
+	dataGen, err := getDataGen(inputFilePath)
+	if err != nil {
+		fmt.Printf("[!] %s\n", err)
+		os.Exit(1)
+	}
+
+	genInsertSqlFile(dataGen, w)
+}
+
+func genInsertSqlFile(dataGen model.DataGen, w service.RanDataService) {
+	w.Open(dataGen)
+	defer w.Close()
+
+	if !slices.Contains(validDb, strings.ToLower(dataGen.DbType)) {
+		fmt.Printf("[!] dbTemplate type %s is not supported\n", dataGen.DbType)
+		os.Exit(1)
+	}
+
+	var dataGenerator template.DataGenerator
+	if dataGen.DbType == "postgres" {
+		dataGenerator = template.NewPostgresTemplate()
+	} else if dataGen.DbType == "oracle" {
+		dataGenerator = template.NewOracleTemplate()
+	} else {
+		fmt.Printf("[!] dbTemplate type %s is not supported\n", dataGen.DbType)
+		os.Exit(1)
+	}
+	dbTemplate := template.NewService(dataGenerator)
+	fmt.Println("[+] Generating insert statements for " + dataGen.DbTable)
+
+	insertSqlSlice := dbTemplate.GetSqlTemplate(dataGen)
+
+	for _, insertSql := range insertSqlSlice {
+		_, err := w.Write([]byte(insertSql))
+		if err != nil {
+			log.Fatalf("[!] %s\n", err)
+		}
+	}
+	fmt.Println("Successfully inserted into database!")
+}
+
+func getDataGen(inputFile string) (model.DataGen, error) {
+	data, err := os.ReadFile(inputFile)
+	if err != nil {
+		return model.DataGen{}, fmt.Errorf("error reading file: %v", err)
+
 	}
 	var dataGen model.DataGen
 	err = json.Unmarshal(data, &dataGen)
 	if err != nil {
-		fmt.Errorf("error unmarshalling json: %v", err)
+		return model.DataGen{}, fmt.Errorf("error unmarshalling json: %v", err)
 	}
-	columns := dataGen.Columns
-	insertSql := internal.GetSqlTemplate(columns)
 
-	fmt.Println(insertSql)
+	outputFilePath := strings.Replace(inputFile, ".json", "", 1) + "-output-" + strconv.Itoa(int(time.Now().UnixMilli())) + ".sql"
+	dataGen.OutputFilePath = outputFilePath
+	return dataGen, nil
+}
 
+func getFilePaths(args []string) (string, string, error) {
+	inputFilePath := args[0]
+	exists := fileExists(inputFilePath)
+	if !exists {
+		return "", "", fmt.Errorf("[!] %s\n", inputFilePath+" does not exist")
+	}
+	outputFilePath := args[1]
+	exists = fileExists(outputFilePath)
+	if exists {
+		return "", "", fmt.Errorf("[!] %s\n", outputFilePath+" already exists, please remove it or use another name")
+	}
+	return inputFilePath, outputFilePath, nil
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return true
 }
 
 func init() {
-	rootCmd.AddCommand(genCmd)
+	rootCmd.AddCommand(generateCmd)
 
-	// Here you will define your flags and configuration settings.
+	generateCmd.Flags().BoolP("dir", "d", false, "if true, the input and the output will be current directory (for input the file pattern is randata*.json)")
+	generateCmd.Flags().BoolP("toFile", "f", false, "if true, write the output to a file")
 
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// genCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// genCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }

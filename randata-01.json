@@ -1,0 +1,41 @@
+{
+  "dbType":"postgres",
+  "dbHost":"127.0.0.1",
+  "dbPort":"5432",
+  "dbUser": "postgres",
+  "dbPassword": "admin",
+  "dbName":"remo_db",
+  "dbSchema":"remo",
+  "dbTable":"user",
+  "columns": [
+    {
+      "name": "user_id",
+      "dataType": "UUID"
+    },
+    {
+      "name": "username",
+      "dataType": "CHARACTER_VARYING",
+      "length": 25
+    },
+    {
+      "name": "age",
+      "dataType": "INTEGER",
+      "length": 2
+    },
+    {
+      "name": "email",
+      "dataType": "CHARACTER_VARYING",
+      "length": 25
+    },
+    {
+      "name": "ts_insert",
+      "dataType": "TIMESTAMP",
+      "now": true
+    },
+    {
+      "name": "valid",
+      "dataType": "BOOLEAN"
+    }
+  ],
+  "rows": 11
+}
