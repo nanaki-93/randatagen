@@ -1,19 +1,16 @@
 # randatagen
 cli tool to generate database random data
+add sql and no-sql support
+add support for multiple databases
+add support for graphql
+
+performance on huge insert
+goroutines
+set of preset values for string types ex (days of week, adjectives, names)
 
 
-# input json 
-# {
-#   "columns": [
-#     {
-#       "name": "id",
-#       "dataType": "int",
-#       "length": 1
-#     },
-#     {
-#       "name": "name",
-#       "dataType": "string",
-#       "length": 10
-#     }],
-#   "rows": 10
-# }
+
+add migrating command
+
+!!!under construction!!!
+
