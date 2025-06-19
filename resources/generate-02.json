@@ -1,15 +1,17 @@
 {
-  "dbType":"postgres",
-  "dbHost":"127.0.0.1",
-  "dbPort":"5432",
-  "dbUser": "postgres",
-  "dbPassword": "admin",
-  "dbName":"remo_db",
-  "dbSchema":"remo",
-  "dbTable":"user",
+  "target" : {
+    "dbType":"postgres",
+    "dbHost":"127.0.0.1",
+    "dbPort":5432,
+    "dbUser": "postgres",
+    "dbPassword": "admin",
+    "dbName":"remo_db",
+    "dbSchema":"remo",
+    "dbTable":"person"
+  },
   "columns": [
     {
-      "name": "user_id",
+      "name": "person_id",
       "dataType": "UUID"
     },
     {
@@ -30,12 +32,12 @@
     {
       "name": "ts_insert",
       "dataType": "TIMESTAMP",
-      "now": true
+      "now": false
     },
     {
       "name": "valid",
       "dataType": "BOOLEAN"
     }
   ],
-  "rows": 11
+  "rows": 3
 }

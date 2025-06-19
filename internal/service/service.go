@@ -5,12 +5,12 @@ import (
 	"io"
 )
 
-type RanDataService interface {
+type RanDataWriter interface {
 	io.WriteCloser
-	Open(target model.DataGen)
+	Open(target model.GenerateData)
 }
 
-func NewRandataService(isToFile bool) RanDataService {
+func NewRandataService(isToFile bool) RanDataWriter {
 
 	if isToFile {
 		return newFileService()

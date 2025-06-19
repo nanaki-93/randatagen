@@ -15,7 +15,7 @@ type FileService struct {
 func newFileService() *FileService {
 	return &FileService{}
 }
-func (service *FileService) Open(gen model.DataGen) {
+func (service *FileService) Open(gen model.GenerateData) {
 	service.FileToWrite = openOutputFile(gen.OutputFilePath)
 }
 func (service *FileService) Write(insertSql []byte) (n int, err error) {
