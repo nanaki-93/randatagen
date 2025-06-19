@@ -22,13 +22,15 @@ import (
 	"time"
 )
 
+const GenFilePattern = "generate*.json"
+
 var validDb = []string{"postgres", "oracle"}
 
 // generateCmd represents the gen command
 var generateCmd = &cobra.Command{
 	Use:   "generate",
-	Short: "generate insert for sql data",
-	Long:  `generate insert for sql data`,
+	Short: "generate some random data for sql or nosql db",
+	Long:  `generate some random data for sql or nosql db`,
 	Run:   execGenCmd,
 	Args:  validateArgs(),
 }
@@ -41,8 +43,8 @@ func validateArgs() func(cmd *cobra.Command, args []string) error {
 			os.Exit(1)
 		}
 		if !isDir {
-			if len(args) != 2 {
-				return fmt.Errorf("you have to use exactly 2 args, input file and output file")
+			if len(args) != 1 {
+				return fmt.Errorf("you have to use exactly 1 arg, the input file")
 			}
 		}
 		return nil
@@ -65,14 +67,14 @@ func execGenCmd(cmd *cobra.Command, args []string) {
 	ranDataService := service.NewRandataService(isToFile)
 
 	if !isDir {
-		fromSingleFile(args, ranDataService)
+		fromSingleFile(args[0], ranDataService)
 		return
 	}
 	allRandataFromCurrentDir(ranDataService)
 }
 
-func allRandataFromCurrentDir(w service.RanDataService) {
-	inputFiles, err := filepath.Glob("randata*.json")
+func allRandataFromCurrentDir(w service.RanDataWriter) {
+	inputFiles, err := filepath.Glob(GenFilePattern)
 	if err != nil {
 		fmt.Printf("[!] error reading files: %v\n", err)
 		os.Exit(1)
@@ -84,14 +86,19 @@ func allRandataFromCurrentDir(w service.RanDataService) {
 			fmt.Printf("[!] %s\n", err)
 			os.Exit(1)
 		}
-
 		genInsertSqlFile(dataGen, w)
 	}
 }
 
-func fromSingleFile(args []string, w service.RanDataService) {
-	fmt.Printf("input file: %s, output file: %s\n", args[0], args[1])
-	inputFilePath, _, err := getFilePaths(args)
+func fromSingleFile(inputFile string, w service.RanDataWriter) {
+	dataGen := getDataGenFromArgs(inputFile)
+
+	genInsertSqlFile(dataGen, w)
+}
+
+func getDataGenFromArgs(inputFile string) model.GenerateData {
+	fmt.Printf("input file: %s,\n", inputFile)
+	inputFilePath, err := checkFilePath(inputFile)
 	if err != nil {
 		fmt.Printf("[!] %s\n", err)
 		os.Exit(1)
@@ -101,30 +108,29 @@ func fromSingleFile(args []string, w service.RanDataService) {
 		fmt.Printf("[!] %s\n", err)
 		os.Exit(1)
 	}
-
-	genInsertSqlFile(dataGen, w)
+	return dataGen
 }
 
-func genInsertSqlFile(dataGen model.DataGen, w service.RanDataService) {
+func genInsertSqlFile(dataGen model.GenerateData, w service.RanDataWriter) {
 	w.Open(dataGen)
 	defer w.Close()
 
-	if !slices.Contains(validDb, strings.ToLower(dataGen.DbType)) {
-		fmt.Printf("[!] dbTemplate type %s is not supported\n", dataGen.DbType)
+	if !slices.Contains(validDb, strings.ToLower(dataGen.Target.DbType)) {
+		fmt.Printf("[!] dbTemplate type %s is not supported\n", dataGen.Target.DbType)
 		os.Exit(1)
 	}
 
 	var dataGenerator template.DataGenerator
-	if dataGen.DbType == "postgres" {
+	if dataGen.Target.DbType == "postgres" {
 		dataGenerator = template.NewPostgresTemplate()
-	} else if dataGen.DbType == "oracle" {
+	} else if dataGen.Target.DbType == "oracle" {
 		dataGenerator = template.NewOracleTemplate()
 	} else {
-		fmt.Printf("[!] dbTemplate type %s is not supported\n", dataGen.DbType)
+		fmt.Printf("[!] dbTemplate type %s is not supported\n", dataGen.Target.DbType)
 		os.Exit(1)
 	}
 	dbTemplate := template.NewService(dataGenerator)
-	fmt.Println("[+] Generating insert statements for " + dataGen.DbTable)
+	fmt.Println("[+] Generating insert statements for " + dataGen.Target.DbTable)
 
 	insertSqlSlice := dbTemplate.GetSqlTemplate(dataGen)
 
@@ -137,16 +143,16 @@ func genInsertSqlFile(dataGen model.DataGen, w service.RanDataService) {
 	fmt.Println("Successfully inserted into database!")
 }
 
-func getDataGen(inputFile string) (model.DataGen, error) {
+func getDataGen(inputFile string) (model.GenerateData, error) {
 	data, err := os.ReadFile(inputFile)
 	if err != nil {
-		return model.DataGen{}, fmt.Errorf("error reading file: %v", err)
+		return model.GenerateData{}, fmt.Errorf("error reading file: %v", err)
 
 	}
-	var dataGen model.DataGen
+	var dataGen model.GenerateData
 	err = json.Unmarshal(data, &dataGen)
 	if err != nil {
-		return model.DataGen{}, fmt.Errorf("error unmarshalling json: %v", err)
+		return model.GenerateData{}, fmt.Errorf("error unmarshalling json: %v", err)
 	}
 
 	outputFilePath := strings.Replace(inputFile, ".json", "", 1) + "-output-" + strconv.Itoa(int(time.Now().UnixMilli())) + ".sql"
@@ -154,18 +160,12 @@ func getDataGen(inputFile string) (model.DataGen, error) {
 	return dataGen, nil
 }
 
-func getFilePaths(args []string) (string, string, error) {
-	inputFilePath := args[0]
+func checkFilePath(inputFilePath string) (string, error) {
 	exists := fileExists(inputFilePath)
 	if !exists {
-		return "", "", fmt.Errorf("[!] %s\n", inputFilePath+" does not exist")
+		return "", fmt.Errorf("[!] %s\n", inputFilePath+" does not exist")
 	}
-	outputFilePath := args[1]
-	exists = fileExists(outputFilePath)
-	if exists {
-		return "", "", fmt.Errorf("[!] %s\n", outputFilePath+" already exists, please remove it or use another name")
-	}
-	return inputFilePath, outputFilePath, nil
+	return inputFilePath, nil
 }
 
 func fileExists(path string) bool {
@@ -179,7 +179,7 @@ func fileExists(path string) bool {
 func init() {
 	rootCmd.AddCommand(generateCmd)
 
-	generateCmd.Flags().BoolP("dir", "d", false, "if true, the input and the output will be current directory (for input the file pattern is randata*.json)")
+	generateCmd.Flags().BoolP("dir", "d", false, "if true, the input and the output will be current directory (for input the file pattern is "+GenFilePattern+")")
 	generateCmd.Flags().BoolP("toFile", "f", false, "if true, write the output to a file")
 
 }

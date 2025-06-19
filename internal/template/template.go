@@ -39,7 +39,7 @@ const GetUuid = "getUUID"
 const GetJson = "getJson"
 const BatchSize = 1000
 
-func (ts *Service) GetSqlTemplate(dataGen model.DataGen) []string {
+func (ts *Service) GetSqlTemplate(dataGen model.GenerateData) []string {
 
 	insertSqlSlice := make([]string, dataGen.Rows/BatchSize+1)
 
@@ -76,7 +76,7 @@ func (ts *Service) getValues(columns []model.Column, columnsName []string) strin
 	return valuesJoin
 }
 
-func getPrefixInsert(dataGen model.DataGen) string {
+func getPrefixInsert(dataGen model.GenerateData) string {
 	columns := dataGen.Columns
 	columnsName := make([]string, len(columns))
 	for i, column := range columns {
@@ -84,7 +84,7 @@ func getPrefixInsert(dataGen model.DataGen) string {
 	}
 	columnsJoin := strings.Join(columnsName, ", ")
 
-	prefix := "Insert into " + dataGen.DbSchema + "." + WithDoubleQuote(dataGen.DbTable) + "(" + columnsJoin + ") values "
+	prefix := "Insert into " + dataGen.Target.DbSchema + "." + WithDoubleQuote(dataGen.Target.DbTable) + "(" + columnsJoin + ") values "
 	return prefix
 }
 
@@ -113,7 +113,7 @@ func (ts *Service) GetValue(datatype string, length int, now bool) string {
 	}
 }
 
-func WithQuote(input string) string {
+func WithSingleQuote(input string) string {
 	return "'" + input + "'"
 }
 

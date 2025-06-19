@@ -1,0 +1,20 @@
+{
+  "source": {
+    "dbType": "postgres",
+    "dbHost": "127.0.0.1",
+    "dbPort": 5432,
+    "dbUser": "postgres",
+    "dbPassword": "admin",
+    "dbName": "remo_db",
+    "dbSchema": "remo"
+  },
+  "target": {
+    "dbType": "postgres",
+    "dbHost": "127.0.0.1",
+    "dbPort": 5432,
+    "dbUser": "postgres",
+    "dbPassword": "admin",
+    "dbName": "reminder-db",
+    "dbSchema": "games"
+  }
+}

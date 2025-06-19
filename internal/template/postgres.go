@@ -63,7 +63,7 @@ func (tp *PostgresTemplate) GenString(length int) string {
 	for i := range b {
 		b[i] = PgCharSet[seededRand.Intn(len(PgCharSet)-1)]
 	}
-	return WithQuote(string(b))
+	return WithSingleQuote(string(b))
 }
 
 func (tp *PostgresTemplate) GenBool() string {
@@ -84,7 +84,7 @@ func (tp *PostgresTemplate) GenFloat() string {
 }
 
 func (tp *PostgresTemplate) GenUUid() string {
-	return WithQuote(uuid.New().String())
+	return WithSingleQuote(uuid.New().String())
 }
 
 func (tp *PostgresTemplate) GenTs(now bool) string {
@@ -94,5 +94,5 @@ func (tp *PostgresTemplate) GenTs(now bool) string {
 	randomTime := rand.Int63n(time.Now().Unix()-94608000) + 94608000
 	randomNow := time.Unix(randomTime, 0)
 
-	return WithQuote(randomNow.Format(time.RFC3339))
+	return WithSingleQuote(randomNow.Format(time.RFC3339))
 }

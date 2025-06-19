@@ -30,12 +30,12 @@ func (dbService *DbService) Close() error {
 	return nil
 }
 
-func (dbService *DbService) Open(gen model.DataGen) {
-	dbService.DbConn = getDbConn(gen)
+func (dbService *DbService) Open(gen model.GenerateData) {
+	dbService.DbConn = GetPostgresConn(gen.Target)
 }
 
-func getDbConn(dataGen model.DataGen) *sql.DB {
-	dbConn, err := sql.Open(dataGen.DbType, "postgres://"+dataGen.DbUser+":"+dataGen.DbPassword+"@"+dataGen.DbHost+":"+dataGen.DbPort+"/"+dataGen.DbName+"?sslmode=disable")
+func GetPostgresConn(dbModel model.DbStruct) *sql.DB {
+	dbConn, err := sql.Open(dbModel.DbType, fmt.Sprintf("host=%s port=%d dbname=%s user=%s password='%s' sslmode=disable search_path=%s", dbModel.DbHost, dbModel.DbPort, dbModel.DbName, dbModel.DbUser, dbModel.DbPassword, dbModel.DbSchema))
 	if err != nil {
 		log.Fatal("Error connecting to the database: ", err)
 	}
