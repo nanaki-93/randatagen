@@ -1,6 +1,6 @@
 package model
 
-type GenerateData struct {
+type RanData struct {
 	Columns        []Column `json:"columns"`
 	Rows           int      `json:"rows"`
 	Target         DbStruct `json:"target"`

@@ -1,19 +1,17 @@
-package template
+package generate
 
 import (
 	"fmt"
 	"github.com/nanaki-93/randatagen/internal/model"
-	"math/rand"
 	"strings"
-	"time"
 )
 
-type Service struct {
+type TemplateService struct {
 	template DataGenerator
 }
 
-func NewService(template DataGenerator) *Service {
-	return &Service{
+func NewService(template DataGenerator) *TemplateService {
+	return &TemplateService{
 		template: template,
 	}
 }
@@ -28,18 +26,7 @@ type DataGenerator interface {
 	GetValueType(datatype string) (string, error)
 }
 
-var seededRand = rand.New(rand.NewSource(time.Now().UnixNano()))
-
-const GetNumber = "getNumber"
-const GetFloat = "getFloat"
-const GetString = "getString"
-const GetBool = "getBool"
-const GetDateOrTs = "getDateOrTimestamp"
-const GetUuid = "getUUID"
-const GetJson = "getJson"
-const BatchSize = 1000
-
-func (ts *Service) GetSqlTemplate(dataGen model.GenerateData) []string {
+func (ts *TemplateService) GetSqlTemplate(dataGen model.RanData) []string {
 
 	insertSqlSlice := make([]string, dataGen.Rows/BatchSize+1)
 
@@ -66,7 +53,7 @@ func (ts *Service) GetSqlTemplate(dataGen model.GenerateData) []string {
 	return insertSqlSlice
 }
 
-func (ts *Service) getValues(columns []model.Column, columnsName []string) string {
+func (ts *TemplateService) getValues(columns []model.Column, columnsName []string) string {
 	valuesSLice := make([]string, len(columns))
 	for i, column := range columns {
 		columnsName[i] = column.Name
@@ -76,7 +63,7 @@ func (ts *Service) getValues(columns []model.Column, columnsName []string) strin
 	return valuesJoin
 }
 
-func getPrefixInsert(dataGen model.GenerateData) string {
+func getPrefixInsert(dataGen model.RanData) string {
 	columns := dataGen.Columns
 	columnsName := make([]string, len(columns))
 	for i, column := range columns {
@@ -88,7 +75,7 @@ func getPrefixInsert(dataGen model.GenerateData) string {
 	return prefix
 }
 
-func (ts *Service) GetValue(datatype string, length int, now bool) string {
+func (ts *TemplateService) GetValue(datatype string, length int, now bool) string {
 
 	valueType, err := ts.template.GetValueType(datatype)
 	if err != nil {
