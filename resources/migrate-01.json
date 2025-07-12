@@ -1,20 +1,19 @@
 {
+  "dbType": "oracle",
   "source": {
-    "dbType": "postgres",
     "dbHost": "127.0.0.1",
-    "dbPort": 5432,
-    "dbUser": "postgres",
-    "dbPassword": "admin",
-    "dbName": "remo_db",
-    "dbSchema": "remo"
+    "dbPort": 1521,
+    "dbUser": "source",
+    "dbPassword": "golang",
+    "dbName": "ORCLPDB1",
+    "dbSchema": "SOURCE"
   },
   "target": {
-    "dbType": "postgres",
     "dbHost": "127.0.0.1",
-    "dbPort": 5432,
-    "dbUser": "postgres",
-    "dbPassword": "admin",
-    "dbName": "reminder-db",
-    "dbSchema": "games"
+    "dbPort": 1521,
+    "dbUser": "target",
+    "dbPassword": "golang",
+    "dbName": "ORCLPDB1",
+    "dbSchema": "TARGET"
   }
 }

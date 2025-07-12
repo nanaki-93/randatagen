@@ -3,12 +3,12 @@ package model
 type RanData struct {
 	Columns        []Column `json:"columns"`
 	Rows           int      `json:"rows"`
+	DbType         string   `json:"dbType"`
 	Target         DbStruct `json:"target"`
 	OutputFilePath string   `json:"-"`
 }
 
 type DbStruct struct {
-	DbType     string `json:"dbType"`
 	DbHost     string `json:"dbHost"`
 	DbPort     int    `json:"dbPort"`
 	DbUser     string `json:"dbUser"`
@@ -26,6 +26,7 @@ type Column struct {
 }
 
 type MigrateData struct {
+	DbType string   `json:"dbType"`
 	Source DbStruct `json:"source"`
 	Target DbStruct `json:"target"`
 }

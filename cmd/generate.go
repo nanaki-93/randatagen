@@ -9,7 +9,9 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/nanaki-93/randatagen/internal/generate"
 	"github.com/nanaki-93/randatagen/internal/model"
+	"github.com/nanaki-93/randatagen/internal/writer"
 	"github.com/spf13/cobra"
+	"log/slog"
 
 	"os"
 	"path/filepath"
@@ -34,8 +36,7 @@ var generateCmd = &cobra.Command{
 
 func validateArgs() func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
-		isDir, err := cmd.Flags().GetBool("dir")
-		PrintErrAndExit(err)
+		isDir, _ := cmd.Flags().GetBool("dir")
 
 		if !isDir {
 			if len(args) != 1 {
@@ -48,82 +49,97 @@ func validateArgs() func(cmd *cobra.Command, args []string) error {
 
 func execGenCmd(cmd *cobra.Command, args []string) {
 
-	isDir, err := cmd.Flags().GetBool("dir")
-	PrintErrAndExit(err)
+	isDir, _ := cmd.Flags().GetBool("dir")
+	isToFile, _ := cmd.Flags().GetBool("toFile")
+	ranDataService := writer.NewRandataService(isToFile)
+	var err error
 
-	isToFile, err := cmd.Flags().GetBool("toFile")
-	PrintErrAndExit(err)
-
-	ranDataService := generate.NewRandataService(isToFile)
-
-	if !isDir {
-		fromSingleFile(args[0], ranDataService)
-		return
+	if isDir {
+		err = processDir(ranDataService)
+	} else {
+		err = processFile(args[0], ranDataService)
 	}
-	FromCurrentDir(ranDataService)
+
+	if err != nil {
+		slog.Error("Error generating data", "error", err)
+		os.Exit(1)
+	}
 }
 
-func FromCurrentDir(w generate.RanDataWriter) {
+func processDir(w writer.RanDataWriter) error {
 	inputFiles, err := filepath.Glob(GenFilePattern)
-	PrintErrAndExit(err)
+	if err != nil {
+		return fmt.Errorf("error finding files: %v", err)
+	}
 
 	fmt.Printf("Input files: %v\n", inputFiles)
 
 	for _, inputFile := range inputFiles {
 		ranData, err := getRanData(inputFile)
-		PrintErrAndExit(err)
-		genSingleInsert(ranData, w)
+		if err != nil {
+			return fmt.Errorf("error getting ran data from file %s: %v", inputFile, err)
+		}
+		if err = genSingleInsert(ranData, w); err != nil {
+			return fmt.Errorf("error generating single insert for file %s: %v", inputFile, err)
+		}
 	}
+	return nil
 }
 
-func fromSingleFile(inputFile string, w generate.RanDataWriter) {
-	dataGen := getDataGenFromArgs(inputFile)
-
-	genSingleInsert(dataGen, w)
-}
-
-func getDataGenFromArgs(inputFile string) model.RanData {
+func processFile(inputFile string, w writer.RanDataWriter) error {
 	fmt.Printf("input file: %s,\n", inputFile)
-	inputFilePath, err := checkFilePath(inputFile)
-	PrintErrAndExit(err)
+	dataGen, err := getRanData(inputFile)
+	if err != nil {
+		return fmt.Errorf("error getting ran data from file %s: %v", inputFile, err)
+	}
 
-	dataGen, err := getRanData(inputFilePath)
-	PrintErrAndExit(err)
-
-	return dataGen
+	if err := genSingleInsert(dataGen, w); err != nil {
+		return fmt.Errorf("error generating single insert: %v", err)
+	}
+	return nil
 }
 
-func genSingleInsert(dataGen model.RanData, w generate.RanDataWriter) {
-	w.Open(dataGen)
-	defer w.Close()
+func genSingleInsert(dataGen model.RanData, w writer.RanDataWriter) error {
+	err := w.Open(dataGen)
+	if err != nil {
+		return fmt.Errorf("error opening writer: %v", err)
+	}
+	defer func() {
+		if cerr := w.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("close error: %w", cerr)
+		}
+	}()
+	dbType := strings.ToLower(dataGen.DbType)
 
-	if !slices.Contains(validDb, strings.ToLower(dataGen.Target.DbType)) {
-		fmt.Printf("[!] dbTemplate type %s is not supported\n", dataGen.Target.DbType)
-		os.Exit(1)
+	if !slices.Contains(validDb, dbType) {
+		return fmt.Errorf("dbGenerator type %s is not supported", dbType)
 	}
 
-	var dataGenerator generate.DataGenerator
-	if dataGen.Target.DbType == "postgres" {
-		dataGenerator = generate.NewPostgresTemplate()
-	} else if dataGen.Target.DbType == "oracle" {
-		dataGenerator = generate.NewOracleTemplate()
-	} else {
-		fmt.Printf("[!] dbTemplate type %s is not supported\n", dataGen.Target.DbType)
-		os.Exit(1)
+	getDataProvider, ok := generate.ProviderFactories[dbType]
+	if !ok {
+		return fmt.Errorf("dbGenerator type %s is not supported", dbType)
 	}
-	dbTemplate := generate.NewService(dataGenerator)
-	fmt.Println("[+] Generating insert statements for " + dataGen.Target.DbTable)
 
-	insertSqlSlice := dbTemplate.GetSqlTemplate(dataGen)
+	dbGenerator := generate.NewGeneratorService(getDataProvider())
+	fmt.Println("[+] Generating Data for " + dataGen.Target.DbTable)
+
+	insertSqlSlice := dbGenerator.GenerateSql(dataGen)
 
 	for _, insertSql := range insertSqlSlice {
 		_, err := w.Write([]byte(insertSql))
-		PrintErrAndExit(err)
+		if err != nil {
+			return fmt.Errorf("error writing to output: %v", err)
+		}
 	}
-	fmt.Println("Successfully inserted into database!")
+	fmt.Println("Data generated successfully!")
+	return err
 }
 
 func getRanData(inputFile string) (model.RanData, error) {
+	err := checkFileExists(inputFile)
+	if err != nil {
+		return model.RanData{}, fmt.Errorf("error checking file existence: %v", err)
+	}
 	data, err := os.ReadFile(inputFile)
 	if err != nil {
 		return model.RanData{}, fmt.Errorf("error reading file: %v", err)
@@ -140,12 +156,12 @@ func getRanData(inputFile string) (model.RanData, error) {
 	return ranData, nil
 }
 
-func checkFilePath(inputFilePath string) (string, error) {
+func checkFileExists(inputFilePath string) error {
 	exists := fileExists(inputFilePath)
 	if !exists {
-		return "", fmt.Errorf("[!] %s\n", inputFilePath+" does not exist")
+		return fmt.Errorf("[!] %s\n", inputFilePath+" does not exist")
 	}
-	return inputFilePath, nil
+	return nil
 }
 
 func fileExists(path string) bool {
