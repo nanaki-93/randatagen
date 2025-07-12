@@ -1,10 +1,15 @@
 package migrate
 
-import "github.com/nanaki-93/randatagen/internal/model"
+import (
+	"database/sql"
+	"github.com/nanaki-93/randatagen/internal/model"
+)
 
 type DbProvider interface {
-	Open(migrateConfig model.MigrateData) error
-	MigrateSchema(migrateConfig model.MigrateData) error
+	Open(migrationConfig model.MigrationData) (*sql.DB, *sql.DB, error)
+	MigrateSchema(migrateConfig model.MigrationData) error
+	GetTablesToMigrate(migrateData model.MigrationData, sourceConn *sql.DB) ([]string, error)
+	MigrateTable(sourceConn, targetConn *sql.DB, table string) error
 	Close() error
 }
 type ProviderFactory func() DbProvider
@@ -14,12 +19,12 @@ var ProviderFactories = map[string]ProviderFactory{
 	"oracle":   NewOracleProvider,
 }
 
-type MigratorService struct {
-	migrateConfig model.MigrateData
+type MigrationService struct {
+	migrateConfig model.MigrationData
 }
 
-func NewMigratorService(migrateConfig model.MigrateData) *MigratorService {
-	return &MigratorService{
+func NewMigrationService(migrateConfig model.MigrationData) *MigrationService {
+	return &MigrationService{
 		migrateConfig: migrateConfig,
 	}
 }

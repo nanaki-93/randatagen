@@ -53,7 +53,7 @@ func execMigrateCmd(cmd *cobra.Command, args []string) {
 
 }
 
-func MigrateSchema(migrateData model.MigrateData) error {
+func MigrateSchema(migrateData model.MigrationData) error {
 	sourceConn, targetConn, err := getDbConnections(migrateData)
 	if err != nil {
 		return fmt.Errorf("error getting database connections: %w", err)
@@ -69,7 +69,7 @@ func MigrateSchema(migrateData model.MigrateData) error {
 		}
 	}()
 
-	tables, err := GetTablesFromSource(migrateData, sourceConn)
+	tables, err := GetTablesToMigrate(migrateData, sourceConn)
 	if err != nil {
 		return fmt.Errorf("error getting tables from source: %w", err)
 	}
@@ -83,7 +83,7 @@ func MigrateSchema(migrateData model.MigrateData) error {
 	return err
 }
 
-func GetTablesFromSource(migrateData model.MigrateData, sourceConn *sql.DB) ([]string, error) {
+func GetTablesToMigrate(migrateData model.MigrationData, sourceConn *sql.DB) ([]string, error) {
 	getTablesQuery := "SELECT table_name FROM information_schema.tables WHERE table_schema = $1"
 	if migrateData.DbType == "oracle" {
 		getTablesQuery = "SELECT table_name FROM all_tables WHERE owner = $1"
@@ -113,7 +113,7 @@ func GetTablesFromSource(migrateData model.MigrateData, sourceConn *sql.DB) ([]s
 	return tables, err
 }
 
-func getDbConnections(data model.MigrateData) (*sql.DB, *sql.DB, error) {
+func getDbConnections(data model.MigrationData) (*sql.DB, *sql.DB, error) {
 	sourceConn, err := db.GetConn(data.DbType, data.Source)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error getting source connection: %w", err)
@@ -146,21 +146,21 @@ func MigrateAll() error {
 	return nil
 }
 
-func toMigrateData(inputFile string) (model.MigrateData, error) {
+func toMigrateData(inputFile string) (model.MigrationData, error) {
 	fmt.Printf("input file: %s,\n", inputFile)
 	err := checkFileExists(inputFile)
 	if err != nil {
-		return model.MigrateData{}, fmt.Errorf("error checking file path: %v", err)
+		return model.MigrationData{}, fmt.Errorf("error checking file path: %v", err)
 	}
 	data, err := os.ReadFile(inputFile)
 	if err != nil {
-		return model.MigrateData{}, fmt.Errorf("error reading file: %v", err)
+		return model.MigrationData{}, fmt.Errorf("error reading file: %v", err)
 
 	}
-	var migrateData model.MigrateData
+	var migrateData model.MigrationData
 	err = json.Unmarshal(data, &migrateData)
 	if err != nil {
-		return model.MigrateData{}, fmt.Errorf("error unmarshalling json: %v", err)
+		return model.MigrationData{}, fmt.Errorf("error unmarshalling json: %v", err)
 	}
 
 	return migrateData, nil
