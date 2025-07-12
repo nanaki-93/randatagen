@@ -25,7 +25,7 @@ type Column struct {
 	Now      bool   `json:"now"`
 }
 
-type MigrateData struct {
+type MigrationData struct {
 	DbType string   `json:"dbType"`
 	Source DbStruct `json:"source"`
 	Target DbStruct `json:"target"`
