@@ -3,7 +3,7 @@
 
 in Generate command:
 - add sql and no-sql support
-- add modre databases
+- add mode databases
 - add support for graphql
 - performance on huge insert
 - set of preset values for string types ex (days of week, adjectives, names)

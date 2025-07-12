@@ -27,23 +27,23 @@ var oracleTypes = map[string]string{
 	"RAW":       GetString,
 }
 
-type OracleTemplate struct {
+type OracleDataProvider struct {
 	oracleTypes map[string]string
 }
 
-func NewOracleTemplate() *OracleTemplate {
-	return &OracleTemplate{
+func NewOracleDataProvider() DataProvider {
+	return &OracleDataProvider{
 		oracleTypes: oracleTypes,
 	}
 }
-func (dbTemplate *OracleTemplate) GetValueType(datatype string) (string, error) {
+func (dbTemplate *OracleDataProvider) GetValueType(datatype string) (string, error) {
 	if valueType, exists := dbTemplate.oracleTypes[datatype]; exists {
 		return valueType, nil
 	}
 
 	return "", fmt.Errorf("[!] Oracle: datatype %s is not supported\n", datatype)
 }
-func (dbTemplate *OracleTemplate) GenString(length int) string {
+func (dbTemplate *OracleDataProvider) GenString(length int) string {
 
 	b := make([]byte, length)
 	for i := range b {
@@ -52,32 +52,32 @@ func (dbTemplate *OracleTemplate) GenString(length int) string {
 	return "'" + string(b) + "'"
 }
 
-func (dbTemplate *OracleTemplate) GenBool() string {
+func (dbTemplate *OracleDataProvider) GenBool() string {
 	if seededRand.Intn(2) == 0 {
 		return "TRUE"
 	}
 	return "FALSE"
 
 }
-func (dbTemplate *OracleTemplate) GenNumber(length int) string {
+func (dbTemplate *OracleDataProvider) GenNumber(length int) string {
 	rang := seededRand.Intn(10 * length)
 	return strconv.Itoa(rang)
 
 }
-func (dbTemplate *OracleTemplate) GenFloat() string {
+func (dbTemplate *OracleDataProvider) GenFloat() string {
 	rang := seededRand.Float64()
 	return strconv.FormatFloat(rang, 'f', -1, 64)
 }
 
-func (dbTemplate *OracleTemplate) GenUUid() string {
-	return uuid.New().String()
+func (dbTemplate *OracleDataProvider) GenUUid() string {
+	return WithSingleQuote(uuid.New().String())
 }
 
-func (dbTemplate *OracleTemplate) GenTs(now bool) string {
+func (dbTemplate *OracleDataProvider) GenTs(now bool) string {
 	if now {
-		return time.Now().String()
+		return "CURRENT_TIMESTAMP"
 	}
 	randomTime := rand.Int63n(time.Now().Unix()-94608000) + 94608000
 	randomNow := time.Unix(randomTime, 0)
-	return randomNow.String()
+	return WithSingleQuote(randomNow.Format(time.RFC3339))
 }

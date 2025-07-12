@@ -42,23 +42,23 @@ var postgresTypes = map[string]string{
 	"XML":               GetString,
 }
 
-type PostgresTemplate struct {
+type PostgresDataProvider struct {
 	postgresTypes map[string]string
 }
 
-func NewPostgresTemplate() *PostgresTemplate {
-	return &PostgresTemplate{
+func NewPostgresDataProvider() DataProvider {
+	return &PostgresDataProvider{
 		postgresTypes: postgresTypes,
 	}
 }
-func (tp *PostgresTemplate) GetValueType(datatype string) (string, error) {
+func (tp *PostgresDataProvider) GetValueType(datatype string) (string, error) {
 	if valueType, exists := tp.postgresTypes[datatype]; exists {
 		return valueType, nil
 	}
 
 	return "", fmt.Errorf("[!] Postgres: datatype %s is not supported\n", datatype)
 }
-func (tp *PostgresTemplate) GenString(length int) string {
+func (tp *PostgresDataProvider) GenString(length int) string {
 	b := make([]byte, length)
 	for i := range b {
 		b[i] = PgCharSet[seededRand.Intn(len(PgCharSet)-1)]
@@ -66,28 +66,28 @@ func (tp *PostgresTemplate) GenString(length int) string {
 	return WithSingleQuote(string(b))
 }
 
-func (tp *PostgresTemplate) GenBool() string {
+func (tp *PostgresDataProvider) GenBool() string {
 	if seededRand.Intn(2) == 0 {
 		return "true"
 	}
 	return "false"
 
 }
-func (tp *PostgresTemplate) GenNumber(length int) string {
+func (tp *PostgresDataProvider) GenNumber(length int) string {
 	rang := seededRand.Intn(10 * length)
 	return strconv.Itoa(rang)
 
 }
-func (tp *PostgresTemplate) GenFloat() string {
+func (tp *PostgresDataProvider) GenFloat() string {
 	rang := seededRand.Float64()
 	return strconv.FormatFloat(rang, 'f', -1, 64)
 }
 
-func (tp *PostgresTemplate) GenUUid() string {
+func (tp *PostgresDataProvider) GenUUid() string {
 	return WithSingleQuote(uuid.New().String())
 }
 
-func (tp *PostgresTemplate) GenTs(now bool) string {
+func (tp *PostgresDataProvider) GenTs(now bool) string {
 	if now {
 		return "now()"
 	}

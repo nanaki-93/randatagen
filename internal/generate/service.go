@@ -1,101 +1,131 @@
 package generate
 
 import (
-	"database/sql"
-	"errors"
 	"fmt"
-	"github.com/nanaki-93/randatagen/internal/db"
 	"github.com/nanaki-93/randatagen/internal/model"
-	"io"
-	"log"
 	"math/rand"
-	"os"
+	"strings"
 	"time"
 )
 
 var seededRand = rand.New(rand.NewSource(time.Now().UnixNano()))
 
-type RanDataWriter interface {
-	io.WriteCloser
-	Open(target model.RanData)
-}
-
-func NewRandataService(isToFile bool) RanDataWriter {
-
-	if isToFile {
-		return newFileService()
-	}
-	return newDbService()
-}
-
+const GetString = "getString"
 const GetNumber = "getNumber"
 const GetFloat = "getFloat"
-const GetString = "getString"
 const GetBool = "getBool"
 const GetDateOrTs = "getDateOrTimestamp"
 const GetUuid = "getUUID"
 const GetJson = "getJson"
 const BatchSize = 1000
 
-type FileService struct {
-	FileToWrite *os.File
+type DataProvider interface {
+	GenString(length int) string
+	GenBool() string
+	GenNumber(length int) string
+	GenFloat() string
+	GenUUid() string
+	GenTs(bool) string
+	GetValueType(datatype string) (string, error)
 }
 
-func newFileService() *FileService {
-	return &FileService{}
-}
-func (service *FileService) Open(gen model.RanData) {
-	service.FileToWrite = openOutputFile(gen.OutputFilePath)
-}
-func (service *FileService) Write(insertSql []byte) (n int, err error) {
-	if _, err = service.FileToWrite.WriteString(string(insertSql)); err != nil {
-		return 0, fmt.Errorf("[!] %s\n", err)
-	}
-	return len(insertSql), nil
-}
-func (service *FileService) Close() error {
-	if err := service.FileToWrite.Close(); err != nil {
-		return fmt.Errorf("[!] %s\n", err)
-	}
-	return nil
+type ProviderFactory func() DataProvider
+
+var ProviderFactories = map[string]ProviderFactory{
+	"postgres": NewPostgresDataProvider,
+	"oracle":   NewOracleDataProvider,
 }
 
-func openOutputFile(outputFilePath string) *os.File {
-	err := os.Remove(outputFilePath)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		log.Fatalf("[!] %s\n", err)
+type GeneratorService struct {
+	provider DataProvider
+}
+
+func NewGeneratorService(provider DataProvider) *GeneratorService {
+	return &GeneratorService{
+		provider: provider,
+	}
+}
+
+func (ts *GeneratorService) GenerateSql(dataGen model.RanData) []string {
+
+	var insertSqlSlice []string
+
+	columns := dataGen.Columns
+	prefix := getPrefixInsert(dataGen)
+	var builder strings.Builder
+	rowsInBatch := 0
+
+	for i := 0; i < dataGen.Rows; i++ {
+		if rowsInBatch == 0 {
+			builder.Reset()
+			builder.WriteString(prefix)
+		}
+		if rowsInBatch > 0 {
+			builder.WriteString(",")
+		}
+		builder.WriteString("\n(")
+		builder.WriteString(ts.getValues(columns))
+		builder.WriteString(")")
+		rowsInBatch++
+		if rowsInBatch == BatchSize || i == dataGen.Rows-1 {
+			builder.WriteString(";")
+			insertSqlSlice = append(insertSqlSlice, builder.String())
+			rowsInBatch = 0
+		}
 	}
 
-	f, err := os.OpenFile(outputFilePath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+	fmt.Println("generated insert Slice")
+	return insertSqlSlice
+}
+
+func (ts *GeneratorService) getValues(columns []model.Column) string {
+	valuesSLice := make([]string, len(columns))
+	for i, column := range columns {
+		valuesSLice[i] = ts.GetValue(column.Datatype, column.Length, column.Now)
+	}
+	valuesJoin := strings.Join(valuesSLice, ", ")
+	return valuesJoin
+}
+
+func getPrefixInsert(dataGen model.RanData) string {
+	columns := dataGen.Columns
+	columnsName := make([]string, len(columns))
+	for i, column := range columns {
+		columnsName[i] = column.Name
+	}
+	columnsJoin := strings.Join(columnsName, ", ")
+	return fmt.Sprintf("Insert into %s.%s(%s) values", dataGen.Target.DbSchema, WithDoubleQuote(dataGen.Target.DbTable), columnsJoin)
+}
+
+func (ts *GeneratorService) GetValue(datatype string, length int, now bool) string {
+
+	valueType, err := ts.provider.GetValueType(datatype)
 	if err != nil {
-		log.Fatalf("[!] %s\n", err)
+		fmt.Println("[!] Error getting value type:", err)
 	}
-	return f
-}
+	switch valueType {
+	case GetNumber:
+		return ts.provider.GenNumber(length)
+	case GetFloat:
+		return ts.provider.GenFloat()
+	case GetBool:
+		return ts.provider.GenBool()
+	case GetString:
+		return ts.provider.GenString(length)
+	case GetUuid:
+		return ts.provider.GenUUid()
+	case GetDateOrTs:
+		return ts.provider.GenTs(now)
+	default:
+		return "NotSupported"
 
-type DbService struct {
-	DbConn *sql.DB
-}
-
-func newDbService() *DbService {
-	return &DbService{}
-}
-
-func (dbService *DbService) Write(insertSql []byte) (n int, err error) {
-	_, err = dbService.DbConn.Exec(string(insertSql))
-	if err != nil {
-		return 0, fmt.Errorf("Error executing query: %w ", err)
 	}
-	return len(insertSql), err
 }
 
-func (dbService *DbService) Close() error {
-	if err := dbService.DbConn.Close(); err != nil {
-		return fmt.Errorf("[!] %s\n", err)
-	}
-	return nil
+func WithSingleQuote(input string) string {
+	return "'" + input + "'"
 }
 
-func (dbService *DbService) Open(gen model.RanData) {
-	dbService.DbConn = db.GetConn(gen.Target)
+func WithDoubleQuote(input string) string {
+	return "\"" + input + "\""
 }
