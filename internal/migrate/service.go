@@ -6,25 +6,24 @@ import (
 )
 
 type DbProvider interface {
-	Open(migrationConfig model.MigrationData) (*sql.DB, *sql.DB, error)
-	MigrateSchema(migrateConfig model.MigrationData) error
-	GetTablesToMigrate(migrateData model.MigrationData, sourceConn *sql.DB) ([]string, error)
-	MigrateTable(sourceConn, targetConn *sql.DB, table string) error
-	Close() error
+	Open() (source, target *sql.DB, err error)
+	GetTablesToMigrate(sourceConn *sql.DB) ([]string, error)
+	MigrateTable(source, target *sql.DB, table string) error
+	Close(source, target *sql.DB) error
 }
-type ProviderFactory func() DbProvider
+type ProviderFactory func(data model.MigrationData) DbProvider
 
 var ProviderFactories = map[string]ProviderFactory{
-	"postgres": NewPostgresProvider,
-	"oracle":   NewOracleProvider,
+	"postgres": NewPostgresDbProvider,
+	"oracle":   NewOracleDbProvider,
 }
 
 type MigrationService struct {
-	migrateConfig model.MigrationData
+	MigrationProvider DbProvider
 }
 
-func NewMigrationService(migrateConfig model.MigrationData) *MigrationService {
+func NewMigrationService(migrationProvider DbProvider) *MigrationService {
 	return &MigrationService{
-		migrateConfig: migrateConfig,
+		MigrationProvider: migrationProvider,
 	}
 }

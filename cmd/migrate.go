@@ -10,6 +10,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/nanaki-93/randatagen/internal/db"
 	"github.com/nanaki-93/randatagen/internal/generate"
+	"github.com/nanaki-93/randatagen/internal/migrate"
 	"github.com/nanaki-93/randatagen/internal/model"
 	"github.com/spf13/cobra"
 	"log/slog"
@@ -54,76 +55,36 @@ func execMigrateCmd(cmd *cobra.Command, args []string) {
 }
 
 func MigrateSchema(migrateData model.MigrationData) error {
-	sourceConn, targetConn, err := getDbConnections(migrateData)
+
+	getDbProvider, ok := migrate.ProviderFactories[migrateData.DbType]
+	if !ok {
+		return fmt.Errorf("dbGenerator type %s is not supported", dbType)
+	}
+
+	migService := migrate.NewMigrationService(getDbProvider(migrateData))
+
+	source, target, err := migService.MigrationProvider.Open()
 	if err != nil {
-		return fmt.Errorf("error getting database connections: %w", err)
+		return fmt.Errorf("error opening migration provider: %w", err)
 	}
 	defer func() {
-		if cerr := sourceConn.Close(); cerr != nil && err == nil {
-			err = fmt.Errorf("close error: %w", cerr)
-		}
-	}()
-	defer func() {
-		if cerr := targetConn.Close(); cerr != nil && err == nil {
+		if cerr := migService.MigrationProvider.Close(source, target); cerr != nil && err == nil {
 			err = fmt.Errorf("close error: %w", cerr)
 		}
 	}()
 
-	tables, err := GetTablesToMigrate(migrateData, sourceConn)
+	tables, err := migService.MigrationProvider.GetTablesToMigrate(source)
 	if err != nil {
 		return fmt.Errorf("error getting tables from source: %w", err)
 	}
 	for _, table := range tables {
-		err := migrateTable(sourceConn, targetConn, table)
+		err := migService.MigrationProvider.MigrateTable(table)
 		if err != nil {
 			return fmt.Errorf("error migrating table %s: %w", table, err)
 		}
 	}
 	slog.Info("Migration completed successfully")
 	return err
-}
-
-func GetTablesToMigrate(migrateData model.MigrationData, sourceConn *sql.DB) ([]string, error) {
-	getTablesQuery := "SELECT table_name FROM information_schema.tables WHERE table_schema = $1"
-	if migrateData.DbType == "oracle" {
-		getTablesQuery = "SELECT table_name FROM all_tables WHERE owner = $1"
-	}
-	_, err := sourceConn.Exec(getTablesQuery, migrateData.Source.DbSchema)
-
-	rows, err := sourceConn.Query(getTablesQuery)
-	if err != nil {
-		return nil, fmt.Errorf("error getting tables from source: %w", err)
-	}
-
-	defer func() {
-		if cerr := rows.Close(); cerr != nil && err == nil {
-			err = fmt.Errorf("close error: %w", cerr)
-		}
-	}()
-
-	var tables []string
-	for rows.Next() {
-		var tableName string
-		if err := rows.Scan(&tableName); err != nil {
-			return nil, fmt.Errorf("error scanning table name: %w", err)
-		}
-		tables = append(tables, tableName)
-	}
-
-	return tables, err
-}
-
-func getDbConnections(data model.MigrationData) (*sql.DB, *sql.DB, error) {
-	sourceConn, err := db.GetConn(data.DbType, data.Source)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error getting source connection: %w", err)
-	}
-	targetConn, err := db.GetConn(data.DbType, data.Target)
-	if err != nil {
-		sourceConn.Close()
-		return nil, nil, fmt.Errorf("error getting target connection: %w", err)
-	}
-	return sourceConn, targetConn, nil
 }
 
 func MigrateAll() error {
@@ -164,31 +125,6 @@ func toMigrateData(inputFile string) (model.MigrationData, error) {
 	}
 
 	return migrateData, nil
-}
-
-// todo abstact for different db types
-func migrateTable(source *sql.DB, target *sql.DB, table string) error {
-	currentDir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("error getting current directory: %w", err)
-	}
-	dataTmpFile := filepath.Join(currentDir, table+".tmp")
-
-	_, err = source.Exec("COPY " + generate.WithDoubleQuote(table) + " TO '" + dataTmpFile + "' WITH CSV HEADER")
-	if err != nil {
-		return fmt.Errorf("error copying data from source table %s: %w", table, err)
-	}
-	_, err = target.Exec("COPY " + generate.WithDoubleQuote(table) + " FROM '" + dataTmpFile + "' WITH CSV HEADER")
-	if err != nil {
-		return fmt.Errorf("error copying data to target table %s: %w", table, err)
-	}
-
-	err = os.Remove(dataTmpFile)
-	if err != nil {
-		return fmt.Errorf("error removing temporary file %s: %w", dataTmpFile, err)
-	}
-	slog.Info("Migrated table", "table", table)
-	return nil
 }
 
 func init() {
