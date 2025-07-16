@@ -4,12 +4,9 @@ Copyright © 2025 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	_ "github.com/lib/pq"
-	"github.com/nanaki-93/randatagen/internal/db"
-	"github.com/nanaki-93/randatagen/internal/generate"
 	"github.com/nanaki-93/randatagen/internal/migrate"
 	"github.com/nanaki-93/randatagen/internal/model"
 	"github.com/spf13/cobra"
@@ -58,7 +55,7 @@ func MigrateSchema(migrateData model.MigrationData) error {
 
 	getDbProvider, ok := migrate.ProviderFactories[migrateData.DbType]
 	if !ok {
-		return fmt.Errorf("dbGenerator type %s is not supported", dbType)
+		return fmt.Errorf("dbGenerator type %s is not supported", migrateData.DbType)
 	}
 
 	migService := migrate.NewMigrationService(getDbProvider(migrateData))
@@ -78,7 +75,7 @@ func MigrateSchema(migrateData model.MigrationData) error {
 		return fmt.Errorf("error getting tables from source: %w", err)
 	}
 	for _, table := range tables {
-		err := migService.MigrationProvider.MigrateTable(table)
+		err := migService.MigrationProvider.MigrateTable(source, target, table)
 		if err != nil {
 			return fmt.Errorf("error migrating table %s: %w", table, err)
 		}

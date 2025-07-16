@@ -34,6 +34,150 @@ func (p *PostgresDbProvider) Open() (*sql.DB, *sql.DB, error) {
 	return sourceConn, targetConn, nil
 
 }
+func (p *PostgresDbProvider) migrateTableStructure(source, target *sql.DB, table string) error {
+
+	createTablesQuery := fmt.Sprintf(`
+SELECT 'CREATE TABLE IF NOT EXISTS ' || relname || E'\n(\n' ||
+array_to_string(
+array_agg(
+'    ' || column_name || ' ' ||  type ||
+CASE WHEN not is_nullable THEN ' NOT NULL' ELSE '' END
+)
+, E',\n'
+) || E'\n);'
+FROM (
+SELECT
+c.relname,
+a.attname AS column_name,
+pg_catalog.format_type(a.atttypid, a.atttypmod) AS type,
+a.attnotnull AS is_nullable
+FROM pg_class c
+JOIN pg_attribute a ON a.attrelid = c.oid
+WHERE c.relname = '%s'
+AND a.attnum > 0
+AND NOT a.attisdropped
+) AS tabledef
+GROUP BY relname;
+`, table)
+
+	rows, err := source.Query(createTablesQuery)
+	if err != nil {
+		return fmt.Errorf("error getting create table query for %s: %w", table, err)
+	}
+	defer func() {
+		if cerr := rows.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("close error: %w", cerr)
+		}
+	}()
+
+	var createTableQuery string
+	if rows.Next() {
+		if err := rows.Scan(&createTableQuery); err != nil {
+			return fmt.Errorf("error scanning table name: %w", err)
+		}
+	}
+	_, err = target.Exec(createTableQuery)
+	if err != nil {
+		return fmt.Errorf("error executing create table query for %s: %w", table, err)
+	}
+
+	return nil
+}
+
+func (p *PostgresDbProvider) migrateTablePkStructure(source, target *sql.DB, table string) error {
+
+	createTablesQuery := fmt.Sprintf(`SELECT
+    'ALTER TABLE ' || tc.table_name || ' ADD CONSTRAINT ' || tc.constraint_name ||
+    ' PRIMARY KEY (' || string_agg(kcu.column_name, ', ') || ');' AS ddl
+FROM information_schema.table_constraints tc
+         JOIN information_schema.key_column_usage kcu
+              ON tc.constraint_name = kcu.constraint_name
+WHERE tc.table_name = '%s'
+  AND tc.constraint_type = 'PRIMARY KEY'
+GROUP BY tc.table_name, tc.constraint_name;
+`, table)
+
+	rows, err := source.Query(createTablesQuery)
+	if err != nil {
+		return fmt.Errorf("error getting create table query for %s: %w", table, err)
+	}
+	defer func() {
+		if cerr := rows.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("close error: %w", cerr)
+		}
+	}()
+
+	var createPkQuery string
+	if rows.Next() {
+		if err := rows.Scan(&createPkQuery); err != nil {
+			return fmt.Errorf("error scanning table name: %w", err)
+		}
+	}
+	pqCreatePkQuery := fmt.Sprintf(`
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.table_constraints
+        WHERE table_name = '%s'
+          AND constraint_type = 'PRIMARY KEY'
+          AND constraint_name = '%s_pk'
+    ) THEN
+        EXECUTE '%s';
+    END IF;
+END
+$$;
+`, table, table, createPkQuery)
+	_, err = target.Exec(pqCreatePkQuery)
+	if err != nil {
+		return fmt.Errorf("error executing create table query for %s: %w", table, err)
+	}
+
+	return nil
+}
+
+func (p *PostgresDbProvider) migrateTableIndexesStructure(source, target *sql.DB, table string) error {
+
+	indexesDefinitionQuery := fmt.Sprintf(`SELECT indexdef FROM pg_indexes WHERE tablename = '%s' and schemaname='%s';`, table, p.migrationData.Source.DbSchema)
+
+	rows, err := source.Query(indexesDefinitionQuery)
+	if err != nil {
+		return fmt.Errorf("error getting create table query for %s: %w", table, err)
+	}
+	defer func() {
+		if cerr := rows.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("close error: %w", cerr)
+		}
+	}()
+
+	var indexesCreateQueryList []string
+	for rows.Next() {
+		var indexCreateQuery string
+		if err := rows.Scan(&indexCreateQuery); err != nil {
+			return fmt.Errorf("error scanning table name: %w", err)
+		}
+		indexesCreateQueryList = append(indexesCreateQueryList, indexCreateQuery)
+	}
+	indexTemplate := `
+DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_indexes
+            WHERE tablename = '%tablename%' and schemaname='%schemaname%' AND indexname = '%indexname%'
+        ) THEN
+            EXECUTE 'CREATE UNIQUE INDEX %indexname% ON %tablename% USING btree (%tablename%_uid);';
+        END IF;
+    END
+$$;
+`
+
+	_, err = target.Exec(indexTemplate)
+	if err != nil {
+		return fmt.Errorf("error executing create table query for %s: %w", table, err)
+	}
+
+	return nil
+}
 func (p *PostgresDbProvider) GetTablesToMigrate(sourceConn *sql.DB) ([]string, error) {
 	getTablesQuery := "SELECT table_name FROM information_schema.tables WHERE table_schema = $1"
 
