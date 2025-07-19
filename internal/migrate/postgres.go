@@ -3,6 +3,7 @@ package migrate
 import (
 	"database/sql"
 	"fmt"
+	"github.com/nanaki-93/randatagen/internal/config"
 	"github.com/nanaki-93/randatagen/internal/db"
 	"github.com/nanaki-93/randatagen/internal/generate"
 	"github.com/nanaki-93/randatagen/internal/model"
@@ -36,29 +37,7 @@ func (p *PostgresDbProvider) Open() (*sql.DB, *sql.DB, error) {
 }
 func (p *PostgresDbProvider) migrateTableStructure(source, target *sql.DB, table string) error {
 
-	createTablesQuery := fmt.Sprintf(`
-SELECT 'CREATE TABLE IF NOT EXISTS ' || relname || E'\n(\n' ||
-array_to_string(
-array_agg(
-'    ' || column_name || ' ' ||  type ||
-CASE WHEN not is_nullable THEN ' NOT NULL' ELSE '' END
-)
-, E',\n'
-) || E'\n);'
-FROM (
-SELECT
-c.relname,
-a.attname AS column_name,
-pg_catalog.format_type(a.atttypid, a.atttypmod) AS type,
-a.attnotnull AS is_nullable
-FROM pg_class c
-JOIN pg_attribute a ON a.attrelid = c.oid
-WHERE c.relname = '%s'
-AND a.attnum > 0
-AND NOT a.attisdropped
-) AS tabledef
-GROUP BY relname;
-`, table)
+	createTablesQuery := fmt.Sprintf(config.Queries[config.DynamicCreateQuery], table)
 
 	rows, err := source.Query(createTablesQuery)
 	if err != nil {
