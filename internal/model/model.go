@@ -30,3 +30,9 @@ type MigrationData struct {
 	Source DbStruct `json:"source"`
 	Target DbStruct `json:"target"`
 }
+
+type CreateQuery struct {
+	Table      string `json:"table"`
+	Index      string `json:"index"`
+	PrimaryKey string `json:"primaryKey"`
+}
