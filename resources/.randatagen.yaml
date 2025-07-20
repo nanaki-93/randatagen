@@ -1,0 +1,64 @@
+postgres:
+  getTableNames: SELECT table_name FROM information_schema.tables WHERE table_schema = $1
+  table: |
+    SELECT 'CREATE TABLE IF NOT EXISTS ' || relname || E'\n(\n' ||
+    array_to_string(
+    array_agg(
+    '    ' || column_name || ' ' ||  type ||
+    CASE WHEN not is_nullable THEN ' NOT NULL' ELSE '' END
+    )
+    , E',\n'
+    ) || E'\n);'
+    FROM (
+    SELECT
+    c.relname,
+    a.attname AS column_name,
+    pg_catalog.format_type(a.atttypid, a.atttypmod) AS type,
+    a.attnotnull AS is_nullable
+    FROM pg_class c
+    JOIN pg_attribute a ON a.attrelid = c.oid
+    WHERE c.relname = '%s'
+    AND a.attnum > 0
+    AND NOT a.attisdropped
+    ) AS tabledef
+    GROUP BY relname;
+  extractIndex: SELECT indexdef FROM pg_indexes WHERE tablename = '%s' and schemaname='%s';
+  extractPrimaryKey: |
+    SELECT
+        'ALTER TABLE ' || tc.table_name || ' ADD CONSTRAINT ' || tc.constraint_name ||
+        ' PRIMARY KEY (' || string_agg(kcu.column_name, ', ') || ');' AS ddl
+    FROM information_schema.table_constraints tc
+             JOIN information_schema.key_column_usage kcu
+                  ON tc.constraint_name = kcu.constraint_name
+    WHERE tc.table_name = '%s'
+      AND tc.constraint_type = 'PRIMARY KEY'
+    GROUP BY tc.table_name, tc.constraint_name;
+  createIndex: |
+    DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE tablename = '%tablename%' and schemaname='%schemaname%' AND indexname = '%indexname%'
+            ) THEN
+                EXECUTE '%indexCreateQuery%';
+            END IF;
+        END
+    $$;
+  createPrimaryKey: |
+        DO $$
+          BEGIN 
+            IF NOT EXISTS (SELECT 1
+                          FROM information_schema.table_constraints
+                          WHERE table_name = '%s'
+                            AND constraint_type = 'PRIMARY KEY'
+                            AND constraint_name = '%s_pk') THEN
+              EXECUTE '%s';
+            END IF;
+          END
+        $$;
+  copyFrom: |
+    COPY %1 FROM %1 WITH CSV HEADER;
+  copyTo: |
+    COPY %1 TO %2 WITH CSV HEADER;
+    
+

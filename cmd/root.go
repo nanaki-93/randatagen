@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"github.com/nanaki-93/randatagen/internal/config"
+	"log/slog"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -53,5 +54,10 @@ func init() {
 // initConfig reads in config file and ENV variables if set.
 func initConfig() {
 
-	config.LoadConfig(cfgFile)
+	err := config.LoadConfig(cfgFile)
+	if err != nil {
+		// If there is any other error, we log it and exit
+		slog.Error("Error loading config file", "error", err)
+		os.Exit(1)
+	}
 }

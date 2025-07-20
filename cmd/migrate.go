@@ -26,7 +26,6 @@ var migrateCmd = &cobra.Command{
 }
 
 func execMigrateCmd(cmd *cobra.Command, args []string) {
-	inputFile := args[0]
 
 	isDir, _ := cmd.Flags().GetBool("dir")
 	if isDir {
@@ -36,6 +35,8 @@ func execMigrateCmd(cmd *cobra.Command, args []string) {
 			os.Exit(1)
 		}
 	} else {
+		inputFile := args[0]
+
 		migrateData, err := toMigrateData(inputFile)
 		if err != nil {
 			slog.Error("Error getting migrate data from input file", "error", err)
