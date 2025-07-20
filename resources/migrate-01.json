@@ -1,19 +1,19 @@
 {
-  "dbType": "oracle",
+  "dbType": "postgres",
   "source": {
     "dbHost": "127.0.0.1",
-    "dbPort": 1521,
-    "dbUser": "source",
+    "dbPort": 5454,
+    "dbUser": "golang",
     "dbPassword": "golang",
-    "dbName": "ORCLPDB1",
-    "dbSchema": "SOURCE"
+    "dbName": "postgres",
+    "dbSchema": "test"
   },
   "target": {
     "dbHost": "127.0.0.1",
-    "dbPort": 1521,
-    "dbUser": "target",
+    "dbPort": 5454,
+    "dbUser": "golang",
     "dbPassword": "golang",
-    "dbName": "ORCLPDB1",
-    "dbSchema": "TARGET"
+    "dbName": "postgres",
+    "dbSchema": "tartget"
   }
 }

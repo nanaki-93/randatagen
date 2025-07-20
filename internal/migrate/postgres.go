@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type PostgresDbProvider struct {
@@ -37,7 +38,7 @@ func (p *PostgresDbProvider) Open() (*sql.DB, *sql.DB, error) {
 }
 func (p *PostgresDbProvider) migrateTableStructure(source, target *sql.DB, table string) error {
 
-	createTablesQuery := fmt.Sprintf(config.Queries[config.DynamicCreateQuery], table)
+	createTablesQuery := fmt.Sprintf(config.DynamicQueries.Postgres.Table, table)
 
 	rows, err := source.Query(createTablesQuery)
 	if err != nil {
@@ -65,16 +66,7 @@ func (p *PostgresDbProvider) migrateTableStructure(source, target *sql.DB, table
 
 func (p *PostgresDbProvider) migrateTablePkStructure(source, target *sql.DB, table string) error {
 
-	createTablesQuery := fmt.Sprintf(`SELECT
-    'ALTER TABLE ' || tc.table_name || ' ADD CONSTRAINT ' || tc.constraint_name ||
-    ' PRIMARY KEY (' || string_agg(kcu.column_name, ', ') || ');' AS ddl
-FROM information_schema.table_constraints tc
-         JOIN information_schema.key_column_usage kcu
-              ON tc.constraint_name = kcu.constraint_name
-WHERE tc.table_name = '%s'
-  AND tc.constraint_type = 'PRIMARY KEY'
-GROUP BY tc.table_name, tc.constraint_name;
-`, table)
+	createTablesQuery := fmt.Sprintf(config.DynamicQueries.Postgres.ExtractPrimaryKey, table)
 
 	rows, err := source.Query(createTablesQuery)
 	if err != nil {
@@ -92,21 +84,8 @@ GROUP BY tc.table_name, tc.constraint_name;
 			return fmt.Errorf("error scanning table name: %w", err)
 		}
 	}
-	pqCreatePkQuery := fmt.Sprintf(`
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-        FROM information_schema.table_constraints
-        WHERE table_name = '%s'
-          AND constraint_type = 'PRIMARY KEY'
-          AND constraint_name = '%s_pk'
-    ) THEN
-        EXECUTE '%s';
-    END IF;
-END
-$$;
-`, table, table, createPkQuery)
+
+	pqCreatePkQuery := fmt.Sprintf(config.DynamicQueries.Postgres.CreatePrimaryKey, table, table, createPkQuery)
 	_, err = target.Exec(pqCreatePkQuery)
 	if err != nil {
 		return fmt.Errorf("error executing create table query for %s: %w", table, err)
@@ -117,7 +96,7 @@ $$;
 
 func (p *PostgresDbProvider) migrateTableIndexesStructure(source, target *sql.DB, table string) error {
 
-	indexesDefinitionQuery := fmt.Sprintf(`SELECT indexdef FROM pg_indexes WHERE tablename = '%s' and schemaname='%s';`, table, p.migrationData.Source.DbSchema)
+	indexesDefinitionQuery := fmt.Sprintf(config.DynamicQueries.Postgres.ExtractIndex, table, p.migrationData.Source.DbSchema)
 
 	rows, err := source.Query(indexesDefinitionQuery)
 	if err != nil {
@@ -130,39 +109,36 @@ func (p *PostgresDbProvider) migrateTableIndexesStructure(source, target *sql.DB
 	}()
 
 	var indexesCreateQueryList []string
+	var indexNameList []string
 	for rows.Next() {
 		var indexCreateQuery string
 		if err := rows.Scan(&indexCreateQuery); err != nil {
 			return fmt.Errorf("error scanning table name: %w", err)
 		}
 		indexesCreateQueryList = append(indexesCreateQueryList, indexCreateQuery)
+		indexNameList = append(indexNameList, generate.WithDoubleQuote(strings.Split(indexCreateQuery, " ")[2]))
+		fmt.Println("Index Name:", generate.WithDoubleQuote(strings.Split(indexCreateQuery, " ")[2]))
 	}
-	indexTemplate := `
-DO $$
-    BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_indexes
-            WHERE tablename = '%tablename%' and schemaname='%schemaname%' AND indexname = '%indexname%'
-        ) THEN
-            EXECUTE 'CREATE UNIQUE INDEX %indexname% ON %tablename% USING btree (%tablename%_uid);';
-        END IF;
-    END
-$$;
-`
 
-	_, err = target.Exec(indexTemplate)
-	if err != nil {
-		return fmt.Errorf("error executing create table query for %s: %w", table, err)
+	for i, extractedIndex := range indexesCreateQueryList {
+		createIndexTemplate := config.DynamicQueries.Postgres.CreateIndex
+		createIndexTemplate = strings.ReplaceAll(createIndexTemplate, "%tablename%", table)
+		createIndexTemplate = strings.ReplaceAll(createIndexTemplate, "%schemaname%", p.migrationData.Source.DbSchema)
+		createIndexTemplate = strings.ReplaceAll(createIndexTemplate, "%indexname%", indexNameList[i])
+		createIndexTemplate = strings.ReplaceAll(createIndexTemplate, "%indexCreateQuery%", extractedIndex)
+
+		_, err = target.Exec(createIndexTemplate)
+		if err != nil {
+			return fmt.Errorf("error executing create table query for %s: %w", table, err)
+		}
 	}
 
 	return nil
 }
 func (p *PostgresDbProvider) GetTablesToMigrate(sourceConn *sql.DB) ([]string, error) {
-	getTablesQuery := "SELECT table_name FROM information_schema.tables WHERE table_schema = $1"
-
-	_, err := sourceConn.Exec(getTablesQuery, p.migrationData.Source.DbSchema)
-
-	rows, err := sourceConn.Query(getTablesQuery)
+	query := config.DynamicQueries.Postgres.GetTableNames
+	fmt.Println(query)
+	rows, err := sourceConn.Query(query, p.migrationData.Source.DbSchema)
 	if err != nil {
 		return nil, fmt.Errorf("error getting tables from source: %w", err)
 	}
@@ -191,11 +167,11 @@ func (p *PostgresDbProvider) MigrateTable(source, target *sql.DB, table string) 
 	}
 	dataTmpFile := filepath.Join(currentDir, table+".tmp")
 
-	_, err = source.Exec("COPY " + generate.WithDoubleQuote(table) + " TO '" + dataTmpFile + "' WITH CSV HEADER")
+	_, err = source.Exec(config.DynamicQueries.Postgres.CopyTo, generate.WithDoubleQuote(table), dataTmpFile)
 	if err != nil {
 		return fmt.Errorf("error copying data from source table %s: %w", table, err)
 	}
-	_, err = target.Exec("COPY " + generate.WithDoubleQuote(table) + " FROM '" + dataTmpFile + "' WITH CSV HEADER")
+	_, err = target.Exec(config.DynamicQueries.Postgres.CopyFrom, generate.WithDoubleQuote(table), dataTmpFile)
 	if err != nil {
 		return fmt.Errorf("error copying data to target table %s: %w", table, err)
 	}

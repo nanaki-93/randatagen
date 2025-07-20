@@ -32,7 +32,7 @@ func (dbService *DbService) Close() error {
 
 func (dbService *DbService) Open(gen model.RanData) error {
 	var err error
-	dbService.DbConn, err = db.GetConn(gen.Target)
+	dbService.DbConn, err = db.GetConn(gen.DbType, gen.Target)
 	if err != nil {
 		return fmt.Errorf("error opening database connection: %w", err)
 	}

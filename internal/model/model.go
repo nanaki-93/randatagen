@@ -30,9 +30,20 @@ type MigrationData struct {
 	Source DbStruct `json:"source"`
 	Target DbStruct `json:"target"`
 }
-
-type CreateQuery struct {
-	Table      string `json:"table"`
-	Index      string `json:"index"`
-	PrimaryKey string `json:"primaryKey"`
+type QueryConfig struct {
+	DynamicQueries DynamicQueries `json:"dynamicQueries"`
+}
+type DynamicQueries struct {
+	Postgres MigrateQuery `json:"postgres"`
+	//Oracle   MigrateQuery `json:"oracle"`
+}
+type MigrateQuery struct {
+	GetTableNames     string `json:"getTableNames"`
+	Table             string `json:"table"`
+	ExtractIndex      string `json:"extractIndex"`
+	ExtractPrimaryKey string `json:"extractPrimaryKey"`
+	CreateIndex       string `json:"createIndex"`
+	CreatePrimaryKey  string `json:"createPrimaryKey"`
+	CopyFrom          string `json:"copyFrom"`
+	CopyTo            string `json:"copyTo"`
 }
