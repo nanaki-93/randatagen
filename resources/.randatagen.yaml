@@ -4,7 +4,7 @@ postgres:
     SELECT 'CREATE TABLE IF NOT EXISTS ' || relname || E'\n(\n' ||
     array_to_string(
     array_agg(
-    '    ' || column_name || ' ' ||  type ||
+    '    ' || column_name || ' ' || type ||
     CASE WHEN not is_nullable THEN ' NOT NULL' ELSE '' END
     )
     , E',\n'
@@ -16,13 +16,19 @@ postgres:
     pg_catalog.format_type(a.atttypid, a.atttypmod) AS type,
     a.attnotnull AS is_nullable
     FROM pg_class c
+    JOIN pg_namespace n ON c.relnamespace = n.oid
     JOIN pg_attribute a ON a.attrelid = c.oid
     WHERE c.relname = '%s'
+    AND n.nspname = '%s'
     AND a.attnum > 0
     AND NOT a.attisdropped
     ) AS tabledef
     GROUP BY relname;
-  extractIndex: SELECT indexdef FROM pg_indexes WHERE tablename = '%s' and schemaname='%s';
+  extractIndex: |
+    SELECT
+      REPLACE(indexdef, schemaname || '.', '') AS indexdef_no_schema
+    FROM pg_indexes
+    WHERE tablename = '%s' AND schemaname = '%s'
   extractPrimaryKey: |
     SELECT
         'ALTER TABLE ' || tc.table_name || ' ADD CONSTRAINT ' || tc.constraint_name ||
@@ -35,14 +41,21 @@ postgres:
     GROUP BY tc.table_name, tc.constraint_name;
   createIndex: |
     DO $$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_indexes
-                WHERE tablename = '%tablename%' and schemaname='%schemaname%' AND indexname = '%indexname%'
-            ) THEN
-                EXECUTE '%indexCreateQuery%';
-            END IF;
-        END
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_indexes
+            WHERE tablename = '%s' AND schemaname = '%s' AND indexname = '%s'
+        )
+        AND NOT EXISTS (
+            SELECT 1 FROM information_schema.table_constraints
+            WHERE table_schema = '%s'
+              AND table_name = '%s'
+              AND constraint_type = 'PRIMARY KEY'
+              AND constraint_name = '%s'
+        ) THEN
+            EXECUTE '%s';
+        END IF;
+    END
     $$;
   createPrimaryKey: |
         DO $$
@@ -57,8 +70,8 @@ postgres:
           END
         $$;
   copyFrom: |
-    COPY %1 FROM %1 WITH CSV HEADER;
+    COPY "%s" FROM '%s' WITH CSV HEADER;
   copyTo: |
-    COPY %1 TO %2 WITH CSV HEADER;
+    COPY "%s" TO '%s' WITH CSV HEADER;
     
 
